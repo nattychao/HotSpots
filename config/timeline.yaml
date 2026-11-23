@@ -269,18 +269,20 @@ presets:
         start: "08:00"
         end: "23:00"
         ai_mode: "current"         # AI 分析当前榜单
-        push: true                 # 有新增就推送
-        report_mode: "incremental" # 增量模式：有新增才推，没有就安静
+        push: true                 # 每天三次都推
+        # current 而不是 incremental：增量只在"有新增"时推，周末热点更新慢，
+        # 常常一天一条都没有。current 推当前在榜的匹配新闻，三次都有内容。
+        report_mode: "current"
         once:
           analyze: false           # 不限制分析次数
           push: false              # 不限制推送次数
 
-    # 工作日使用三段式推送；周末使用增量自由模式
+    # 工作日使用三段式推送；周末用同一套三次触发，但模式为当前榜单
     day_plans:
       workday:
         periods: ["morning_briefing", "noon_update", "closing_summary"]
       weekend:
-        periods: ["weekend_free"]  # 周末：有新增就推，不打扰睡眠
+        periods: ["weekend_free"]  # 周末：三次都推当前在榜热点
 
     week_map:
       1: "workday"                 # 周一 → 工作日计划
