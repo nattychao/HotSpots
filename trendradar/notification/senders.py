@@ -11,7 +11,7 @@
 - ntfy
 - Bark
 - Slack
-- Pusher Beams（iOS App）
+- 极光推送 JPush（iOS App）
 
 每个发送函数都支持分批发送，并通过参数化配置实现与 CONFIG 的解耦。
 """
@@ -1365,14 +1365,15 @@ def send_to_generic_webhook(
 
 
 # ===============================================================
-# Pusher Beams（经 APNs 推送到 iOS App）
+# 极光推送 JPush（经 APNs 推送到 iOS App）
 # ===============================================================
 
-# APNs 单条负载上限 4096 字节；Beams 还会往里加自己的字段（publishId 等），
-# 留出余量。
-PUSHER_BEAMS_PAYLOAD_LIMIT = 3600
+JPUSH_API_URL = "https://api.jpush.cn/v3/push"
+# 极光要求 notification.ios 整体不超过 3584 字节（UTF-8，一个汉字 3 字节），
+# 它再加上自己的字段交给 APNs（上限 4096）。
+JPUSH_IOS_LIMIT = 3584
 # 通知正文里列出的条数，其余在附带数据里。
-PUSHER_BEAMS_BODY_ITEMS = 3
+JPUSH_BODY_ITEMS = 3
 
 
 def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = None) -> list:
@@ -1424,67 +1425,76 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
     return items
 
 
-def build_pusher_beams_payload(
+def _ios_size(ios: Dict) -> int:
+    return len(json.dumps(ios, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def build_jpush_payload(
     report_data: Dict,
     report_type: str,
-    interest: str,
+    tag: str,
+    production: bool,
     mode: str = "daily",
-    limit: int = PUSHER_BEAMS_PAYLOAD_LIMIT,
+    limit: int = JPUSH_IOS_LIMIT,
     standalone_data: Optional[Dict] = None,
 ) -> Optional[Dict]:
     """
-    组装发给 Pusher Beams 的请求体，没有热点时返回 None。
+    组装发给极光的请求体，没有热点时返回 None。
 
-    一次报告一条推送：
+    一次报告一条推送，发给打了 tag 的设备：
     - 通知标题：热点 · 报告类型
     - 通知正文：前几条标题，多出的写“等 N 条”
-    - 附带数据 apns.hotspot：条目列表（t 标题 / s 来源 / u 链接 / k 关键词组 / n 是否新增），
-      按顺序放到 APNs 负载装得下为止，total 是本次报告的总条数
+    - 附带数据 extras.hotspot：条目列表（t 标题 / s 来源 / u 链接 / k 关键词组 / n 是否新增），
+      按顺序放到 notification.ios 装得下为止，total 是本次报告的总条数
+    - options.apns_production：推到 APNs 的生产环境（True，TestFlight / App Store 包）
+      还是开发环境（False，Xcode 直接装的包），必须与 App 的签名一致
     """
     items = _collect_hotspot_items(report_data, standalone_data)
     if not items:
         return None
 
-    lines = [f"• {item['t']}" for item in items[:PUSHER_BEAMS_BODY_ITEMS]]
-    if len(items) > PUSHER_BEAMS_BODY_ITEMS:
+    lines = [f"• {item['t']}" for item in items[:JPUSH_BODY_ITEMS]]
+    if len(items) > JPUSH_BODY_ITEMS:
         lines.append(f"等 {len(items)} 条")
 
-    apns = {
-        "aps": {
-            "alert": {"title": f"热点 · {report_type}", "body": "\n".join(lines)},
-            "sound": "default",
-            "thread-id": "trendradar",
-        },
-        "hotspot": {"report": report_type, "mode": mode, "total": len(items), "items": []},
+    ios = {
+        "alert": {"title": f"热点 · {report_type}", "body": "\n".join(lines)},
+        "sound": "default",
+        "thread-id": "trendradar",
+        "extras": {"hotspot": {"report": report_type, "mode": mode, "total": len(items), "items": []}},
     }
 
-    def size() -> int:
-        return len(json.dumps(apns, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-
-    carried = apns["hotspot"]["items"]
+    carried = ios["extras"]["hotspot"]["items"]
     for item in items:
         carried.append(item)
-        if size() > limit:
+        if _ios_size(ios) > limit:
             carried.pop()
             break
 
     # 正文本身就超了（极长的标题）：截短正文
-    while size() > limit and apns["aps"]["alert"]["body"]:
-        apns["aps"]["alert"]["body"] = apns["aps"]["alert"]["body"][:-20]
+    while _ios_size(ios) > limit and ios["alert"]["body"]:
+        ios["alert"]["body"] = ios["alert"]["body"][:-20]
 
-    return {"interests": [interest], "apns": apns}
+    return {
+        "platform": ["ios"],
+        "audience": {"tag": [tag]},
+        "notification": {"ios": ios},
+        # 一天内没上线的设备，上线后补发；之后不再补
+        "options": {"apns_production": bool(production), "time_to_live": 86400},
+    }
 
 
-def describe_pusher_beams_payload(payload: Dict) -> str:
+def describe_jpush_payload(payload: Dict) -> str:
     """推送内容的可读版本，打印到日志里：通知标题、正文和附带的每一条，与手机收到的一致。"""
-    apns = payload.get("apns", {})
-    alert = apns.get("aps", {}).get("alert", {})
-    hotspot = apns.get("hotspot", {})
+    ios = payload.get("notification", {}).get("ios", {})
+    alert = ios.get("alert", {})
+    hotspot = ios.get("extras", {}).get("hotspot", {})
     items = hotspot.get("items", [])
-    size = len(json.dumps(apns, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    production = payload.get("options", {}).get("apns_production")
     lines = [
-        "──── Pusher Beams 推送内容 ────",
-        f"订阅：{', '.join(payload.get('interests', []))}    大小：{size} 字节",
+        "──── 极光推送内容 ────",
+        f"标签：{', '.join(payload.get('audience', {}).get('tag', []))}    "
+        f"环境：{'生产' if production else '开发'}    大小：{_ios_size(ios)} 字节",
         f"标题：{alert.get('title', '')}",
         "正文：",
     ]
@@ -1499,10 +1509,18 @@ def describe_pusher_beams_payload(payload: Dict) -> str:
     return "\n".join(lines)
 
 
-def send_to_pusher_beams(
-    instance_id: str,
-    secret_key: str,
-    interest: str,
+def parse_jpush_production(value) -> bool:
+    """JPUSH_APNS_PRODUCTION 的值：true/1/yes/on 为生产环境，其余（含留空）为开发环境。"""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("true", "1", "yes", "on")
+
+
+def send_to_jpush(
+    app_key: str,
+    master_secret: str,
+    tag: str,
+    production: bool,
     report_data: Dict,
     report_type: str,
     proxy_url: Optional[str] = None,
@@ -1510,12 +1528,13 @@ def send_to_pusher_beams(
     standalone_data: Optional[Dict] = None,
 ) -> bool:
     """
-    发送到 Pusher Beams：发布到 interest，Beams 交给 APNs，送到订阅了它的设备。
+    发送到极光推送：推给打了 tag 的设备，极光交给 APNs，送到 iOS App。
 
     Args:
-        instance_id: Beams 实例 ID
-        secret_key: Beams 密钥（Primary key）
-        interest: 订阅名称，与 App 订阅的一致（例如 hotspot）
+        app_key: 极光应用的 AppKey
+        master_secret: 极光应用的 Master Secret（只放在 Secrets 里）
+        tag: 标签，与 App 打的一致（例如 hotspot）
+        production: True 推 APNs 生产环境，False 推开发环境
         report_data: 报告数据
         report_type: 报告类型
         proxy_url: 代理 URL（可选）
@@ -1525,38 +1544,45 @@ def send_to_pusher_beams(
     Returns:
         bool: 发送是否成功（没有热点可推时也返回 True）
     """
-    payload = build_pusher_beams_payload(report_data, report_type, interest, mode, standalone_data=standalone_data)
+    payload = build_jpush_payload(report_data, report_type, tag, production, mode, standalone_data=standalone_data)
     if payload is None:
-        print(f"Pusher Beams 没有可推送的热点，跳过 [{report_type}]")
+        print(f"极光推送 没有可推送的热点，跳过 [{report_type}]")
         return True
 
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-    url = (
-        f"https://{instance_id}.pushnotifications.pusher.com"
-        f"/publish_api/v1/instances/{instance_id}/publishes/interests"
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {secret_key}",
-    }
-    carried = len(payload["apns"]["hotspot"]["items"])
-    total = payload["apns"]["hotspot"]["total"]
-    print(f"发送 Pusher Beams 到 {interest}，附带 {carried}/{total} 条 [{report_type}]")
-    print(describe_pusher_beams_payload(payload))
+    hotspot = payload["notification"]["ios"]["extras"]["hotspot"]
+    print(f"发送 极光推送 到标签 {tag}（{'生产' if production else '开发'}环境），附带 {len(hotspot['items'])}/{hotspot['total']} 条 [{report_type}]")
+    print(describe_jpush_payload(payload))
 
     try:
-        response = requests.post(url, json=payload, headers=headers, proxies=proxies, timeout=30)
+        response = requests.post(
+            JPUSH_API_URL,
+            json=payload,
+            auth=(app_key, master_secret),
+            proxies=proxies,
+            timeout=30,
+        )
     except requests.exceptions.RequestException as e:
-        print(f"Pusher Beams 发送异常 [{report_type}]：{e}")
+        print(f"极光推送 发送异常 [{report_type}]：{e}")
         return False
 
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+
     if response.status_code == 200:
-        try:
-            publish_id = response.json().get("publishId", "")
-        except ValueError:
-            publish_id = ""
-        print(f"Pusher Beams 发送成功 [{report_type}] publishId={publish_id}")
+        print(f"极光推送 发送成功 [{report_type}] msg_id={body.get('msg_id', '')}")
         return True
 
-    print(f"Pusher Beams 发送失败 [{report_type}]，状态码：{response.status_code}，详情：{response.text[:500]}")
+    error = body.get("error", {}) if isinstance(body, dict) else {}
+    code, message = error.get("code"), error.get("message", "")
+    hint = {
+        1004: "AppKey 或 Master Secret 不对",
+        1011: f"没有设备打了标签 {tag}：App 里打开热点推送，并确认它的环境与 JPUSH_APNS_PRODUCTION 一致",
+    }.get(code, "")
+    print(
+        f"极光推送 发送失败 [{report_type}]，状态码：{response.status_code}，错误码：{code}，"
+        f"详情：{message or response.text[:500]}" + (f"（{hint}）" if hint else "")
+    )
     return False

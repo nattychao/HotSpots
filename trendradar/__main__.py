@@ -173,7 +173,7 @@ class NewsAnalyzer:
                 cfg["BARK_URL"],
                 cfg["SLACK_WEBHOOK_URL"],
                 cfg["GENERIC_WEBHOOK_URL"],
-                (cfg.get("PUSHER_BEAMS_INSTANCE_ID") and cfg.get("PUSHER_BEAMS_SECRET_KEY")),
+                (cfg.get("JPUSH_APP_KEY") and cfg.get("JPUSH_MASTER_SECRET")),
             ]
         )
 

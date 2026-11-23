@@ -32,7 +32,8 @@ from .senders import (
     send_to_telegram,
     send_to_wework,
     send_to_generic_webhook,
-    send_to_pusher_beams,
+    send_to_jpush,
+    parse_jpush_production,
 )
 
 
@@ -353,15 +354,16 @@ class NotificationDispatcher:
                 ai_analysis, display_regions, standalone_data
             )
 
-        # Pusher Beams（iOS App，需要实例 ID 和密钥）
-        if self.config.get("PUSHER_BEAMS_INSTANCE_ID") and self.config.get("PUSHER_BEAMS_SECRET_KEY"):
+        # 极光推送（iOS App，需要 AppKey 和 Master Secret）
+        if self.config.get("JPUSH_APP_KEY") and self.config.get("JPUSH_MASTER_SECRET"):
             rd, _, _, _, sd = self._apply_display_regions(
                 report_data, display_regions, standalone_data=standalone_data
             )
-            results["pusher_beams"] = send_to_pusher_beams(
-                instance_id=self.config["PUSHER_BEAMS_INSTANCE_ID"],
-                secret_key=self.config["PUSHER_BEAMS_SECRET_KEY"],
-                interest=self.config.get("PUSHER_BEAMS_INTEREST") or "hotspot",
+            results["jpush"] = send_to_jpush(
+                app_key=self.config["JPUSH_APP_KEY"],
+                master_secret=self.config["JPUSH_MASTER_SECRET"],
+                tag=self.config.get("JPUSH_TAG") or "hotspot",
+                production=parse_jpush_production(self.config.get("JPUSH_APNS_PRODUCTION")),
                 report_data=rd,
                 report_type=report_type,
                 proxy_url=proxy_url,

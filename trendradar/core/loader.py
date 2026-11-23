@@ -407,7 +407,7 @@ def _load_webhook_config(config_data: Dict) -> Dict:
     bark = channels.get("bark", {})
     slack = channels.get("slack", {})
     generic = channels.get("generic_webhook", {})
-    pusher_beams = channels.get("pusher_beams", {})
+    jpush = channels.get("jpush", {})
 
     return {
         # 飞书
@@ -439,10 +439,11 @@ def _load_webhook_config(config_data: Dict) -> Dict:
         # 通用 Webhook
         "GENERIC_WEBHOOK_URL": _get_env_str("GENERIC_WEBHOOK_URL") or generic.get("webhook_url", ""),
         "GENERIC_WEBHOOK_TEMPLATE": _get_env_str("GENERIC_WEBHOOK_TEMPLATE") or generic.get("payload_template", ""),
-        # Pusher Beams（iOS App）
-        "PUSHER_BEAMS_INSTANCE_ID": _get_env_str("PUSHER_BEAMS_INSTANCE_ID") or pusher_beams.get("instance_id", ""),
-        "PUSHER_BEAMS_SECRET_KEY": _get_env_str("PUSHER_BEAMS_SECRET_KEY") or pusher_beams.get("secret_key", ""),
-        "PUSHER_BEAMS_INTEREST": _get_env_str("PUSHER_BEAMS_INTEREST") or pusher_beams.get("interest", "") or "hotspot",
+        # 极光推送（iOS App）
+        "JPUSH_APP_KEY": _get_env_str("JPUSH_APP_KEY") or jpush.get("app_key", ""),
+        "JPUSH_MASTER_SECRET": _get_env_str("JPUSH_MASTER_SECRET") or jpush.get("master_secret", ""),
+        "JPUSH_TAG": _get_env_str("JPUSH_TAG") or jpush.get("tag", "") or "hotspot",
+        "JPUSH_APNS_PRODUCTION": _get_env_str("JPUSH_APNS_PRODUCTION") or str(jpush.get("apns_production", "false")),
     }
 
 
@@ -521,9 +522,10 @@ def _print_notification_sources(config: Dict) -> None:
         source = "环境变量" if os.environ.get("GENERIC_WEBHOOK_URL") else "配置文件"
         notification_sources.append(f"通用Webhook({source}, {count}个账号)")
 
-    if config.get("PUSHER_BEAMS_INSTANCE_ID") and config.get("PUSHER_BEAMS_SECRET_KEY"):
-        source = "环境变量" if os.environ.get("PUSHER_BEAMS_SECRET_KEY") else "配置文件"
-        notification_sources.append(f"Pusher Beams({source}, 订阅 {config.get('PUSHER_BEAMS_INTEREST')})")
+    if config.get("JPUSH_APP_KEY") and config.get("JPUSH_MASTER_SECRET"):
+        source = "环境变量" if os.environ.get("JPUSH_MASTER_SECRET") else "配置文件"
+        environment = "生产" if str(config.get("JPUSH_APNS_PRODUCTION", "")).strip().lower() in ("true", "1", "yes", "on") else "开发"
+        notification_sources.append(f"极光推送({source}, 标签 {config.get('JPUSH_TAG')}, {environment}环境)")
 
     if notification_sources:
         print(f"通知渠道配置来源: {', '.join(notification_sources)}")

@@ -311,10 +311,11 @@ notification:
                                       # 示例：{"content": "{content}"}
                                       # 留空则使用默认格式：{"title": "{title}", "content": "{content}"}
 
-    pusher_beams:                     # Pusher Beams → APNs → iOS App
-      instance_id: ""                 # Beams 实例 ID（建议用环境变量 PUSHER_BEAMS_INSTANCE_ID）
-      secret_key: ""                  # Beams 密钥 Primary key（务必用环境变量 PUSHER_BEAMS_SECRET_KEY，不要写在这里）
-      interest: "hotspot"             # 订阅名称，与 App 订阅的一致
+    jpush:                            # 极光推送 → APNs → iOS App
+      app_key: ""                     # 极光应用 AppKey（建议用环境变量 JPUSH_APP_KEY）
+      master_secret: ""               # 极光 Master Secret（务必用环境变量 JPUSH_MASTER_SECRET，不要写在这里）
+      tag: "hotspot"                  # 标签，与 App 打的一致
+      apns_production: false          # true 推生产环境（TestFlight / App Store 包），false 推开发环境（Xcode 装的包）
 
 
 # ===============================================================
