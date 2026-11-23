@@ -40,8 +40,14 @@ app:
 # 详细时间线图请查看 config/timeline.yaml
 # ===============================================================
 schedule:
-  enabled: false                        # 是否启用调度系统（true=启用, false=关闭，默认关闭）
-  preset: "morning_evening"             # 预设模板名称（见上方说明）
+  enabled: true                         # 是否启用调度系统（true=启用, false=关闭）
+                                        # ⚠️ 设为 false 不等于"不推送"，而是"跳过时段判断、
+                                        #    每次运行都采集+分析+推送"。GitHub Actions 每小时触发
+                                        #    一次的话，就是一天 24 条通知。要按 preset 的时段推送，
+                                        #    必须把它设为 true。
+  preset: "office_hours"                # 预设模板名称（见上方说明）
+                                        # office_hours = 工作日 09-11、13-15、17-19 各推一次
+                                        # 配合 crawler.yml 的 cron（每天 3 次）＝ 每天 3 条通知
 
 
 # ===============================================================

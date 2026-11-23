@@ -85,6 +85,32 @@ class PusherBeamsPayloadTests(unittest.TestCase):
         self.assertIn("1. [科技] 热点0字字字字字字字字字字（微博） 🆕", text)
         self.assertIn("https://m.example.com/1", text)
 
+    def test_hotlist_entries_use_the_camelcase_mobile_link(self):
+        """热榜条目由 analyzer 写入的是 mobileUrl，不是 mobile_url。
+
+        两种写法都要读到，否则手机上打开的是 PC 页面——之前的实现只读
+        snake_case，而真实热榜数据是驼峰，于是永远回退到 PC 链接。
+        """
+        report = {
+            "stats": [
+                {
+                    "word": "科技",
+                    "count": 1,
+                    "titles": [
+                        {
+                            "title": "热榜里的条目",
+                            "source_name": "微博",
+                            "url": "https://pc.example.com/1",
+                            "mobileUrl": "https://m.example.com/1",
+                            "is_new": False,
+                        }
+                    ],
+                }
+            ]
+        }
+        payload = build_pusher_beams_payload(report, "全天汇总", "hotspot")
+        self.assertEqual(payload["apns"]["hotspot"]["items"][0]["u"], "https://m.example.com/1")
+
 
 if __name__ == "__main__":
     unittest.main()

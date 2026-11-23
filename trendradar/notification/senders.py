@@ -1365,7 +1365,12 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
             add(
                 title_data.get("title"),
                 title_data.get("source_name", ""),
-                title_data.get("mobile_url") or title_data.get("url") or "",
+                # 热榜条目由 analyzer 写入的是驼峰 mobileUrl；RSS 条目是
+                # snake_case mobile_url。两种都读，否则手机上打开的是 PC 页。
+                title_data.get("mobileUrl")
+                or title_data.get("mobile_url")
+                or title_data.get("url")
+                or "",
                 word,
                 title_data.get("is_new", False),
             )
