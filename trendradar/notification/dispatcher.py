@@ -362,7 +362,7 @@ class NotificationDispatcher:
             results["jpush"] = send_to_jpush(
                 app_key=self.config["JPUSH_APP_KEY"],
                 master_secret=self.config["JPUSH_MASTER_SECRET"],
-                tag=self.config.get("JPUSH_TAG") or "hotspot",
+                tag=self.config.get("JPUSH_TAG") or None,
                 production=parse_jpush_production(self.config.get("JPUSH_APNS_PRODUCTION")),
                 report_data=rd,
                 report_type=report_type,

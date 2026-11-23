@@ -1432,7 +1432,7 @@ def _ios_size(ios: Dict) -> int:
 def build_jpush_payload(
     report_data: Dict,
     report_type: str,
-    tag: str,
+    tag: Optional[str],
     production: bool,
     mode: str = "daily",
     limit: int = JPUSH_IOS_LIMIT,
@@ -1441,7 +1441,11 @@ def build_jpush_payload(
     """
     组装发给极光的请求体，没有热点时返回 None。
 
-    一次报告一条推送，发给打了 tag 的设备：
+    一次报告一条推送。tag 留空（默认）是广播：发给所有注册了的设备——App 只在用户
+    打开热点推送后才注册极光，关掉时解绑，所以就是开了热点推送的设备。广播免费账号
+    每天最多 10 次。填了 tag 只发给打了这个标签的设备，但按标签推送是极光的 VIP 功能，
+    免费账号会被拒（错误码 2009）。
+
     - 通知标题：热点 · 报告类型
     - 通知正文：前几条标题，多出的写“等 N 条”
     - 附带数据 extras.hotspot：条目列表（t 标题 / s 来源 / u 链接 / k 关键词组 / n 是否新增），
@@ -1477,7 +1481,7 @@ def build_jpush_payload(
 
     return {
         "platform": ["ios"],
-        "audience": {"tag": [tag]},
+        "audience": {"tag": [tag]} if tag else "all",
         "notification": {"ios": ios},
         # 一天内没上线的设备，上线后补发；之后不再补
         "options": {"apns_production": bool(production), "time_to_live": 86400},
@@ -1491,9 +1495,11 @@ def describe_jpush_payload(payload: Dict) -> str:
     hotspot = ios.get("extras", {}).get("hotspot", {})
     items = hotspot.get("items", [])
     production = payload.get("options", {}).get("apns_production")
+    audience = payload.get("audience")
+    target = "广播（所有设备）" if audience == "all" else "标签 " + ", ".join(audience.get("tag", []))
     lines = [
         "──── 极光推送内容 ────",
-        f"标签：{', '.join(payload.get('audience', {}).get('tag', []))}    "
+        f"发给：{target}    "
         f"环境：{'生产' if production else '开发'}    大小：{_ios_size(ios)} 字节",
         f"标题：{alert.get('title', '')}",
         "正文：",
@@ -1519,7 +1525,7 @@ def parse_jpush_production(value) -> bool:
 def send_to_jpush(
     app_key: str,
     master_secret: str,
-    tag: str,
+    tag: Optional[str],
     production: bool,
     report_data: Dict,
     report_type: str,
@@ -1528,12 +1534,12 @@ def send_to_jpush(
     standalone_data: Optional[Dict] = None,
 ) -> bool:
     """
-    发送到极光推送：推给打了 tag 的设备，极光交给 APNs，送到 iOS App。
+    发送到极光推送：广播（tag 留空）或推给打了 tag 的设备，极光交给 APNs，送到 iOS App。
 
     Args:
         app_key: 极光应用的 AppKey
         master_secret: 极光应用的 Master Secret（只放在 Secrets 里）
-        tag: 标签，与 App 打的一致（例如 hotspot）
+        tag: 标签（VIP 功能）；留空则广播
         production: True 推 APNs 生产环境，False 推开发环境
         report_data: 报告数据
         report_type: 报告类型
@@ -1551,7 +1557,8 @@ def send_to_jpush(
 
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     hotspot = payload["notification"]["ios"]["extras"]["hotspot"]
-    print(f"发送 极光推送 到标签 {tag}（{'生产' if production else '开发'}环境），附带 {len(hotspot['items'])}/{hotspot['total']} 条 [{report_type}]")
+    target = f"标签 {tag}" if tag else "广播"
+    print(f"发送 极光推送 {target}（{'生产' if production else '开发'}环境），附带 {len(hotspot['items'])}/{hotspot['total']} 条 [{report_type}]")
     print(describe_jpush_payload(payload))
 
     try:
@@ -1579,7 +1586,10 @@ def send_to_jpush(
     code, message = error.get("code"), error.get("message", "")
     hint = {
         1004: "AppKey 或 Master Secret 不对",
-        1011: f"没有设备打了标签 {tag}：App 里打开热点推送，并确认它的环境与 JPUSH_APNS_PRODUCTION 一致",
+        1011: "没有可推的设备：App 里打开热点推送，并确认它的环境与 JPUSH_APNS_PRODUCTION 一致",
+        2006: "这是极光的 VIP 功能，免费账号不能用",
+        2008: "广播超过了每天 10 次的上限（免费账号），明天恢复",
+        2009: "按标签推送是极光的 VIP 功能：把 JPUSH_TAG 留空改用广播",
     }.get(code, "")
     print(
         f"极光推送 发送失败 [{report_type}]，状态码：{response.status_code}，错误码：{code}，"

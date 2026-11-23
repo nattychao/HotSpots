@@ -314,7 +314,7 @@ notification:
     jpush:                            # 极光推送 → APNs → iOS App
       app_key: ""                     # 极光应用 AppKey（建议用环境变量 JPUSH_APP_KEY）
       master_secret: ""               # 极光 Master Secret（务必用环境变量 JPUSH_MASTER_SECRET，不要写在这里）
-      tag: "hotspot"                  # 标签，与 App 打的一致
+      tag: ""                         # 留空=广播（免费账号每天最多 10 次）；填标签只推给打了它的设备，但这是极光 VIP 功能
       apns_production: false          # true 推生产环境（TestFlight / App Store 包），false 推开发环境（Xcode 装的包）
 
 

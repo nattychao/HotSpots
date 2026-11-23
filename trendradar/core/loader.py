@@ -442,7 +442,8 @@ def _load_webhook_config(config_data: Dict) -> Dict:
         # 极光推送（iOS App）
         "JPUSH_APP_KEY": _get_env_str("JPUSH_APP_KEY") or jpush.get("app_key", ""),
         "JPUSH_MASTER_SECRET": _get_env_str("JPUSH_MASTER_SECRET") or jpush.get("master_secret", ""),
-        "JPUSH_TAG": _get_env_str("JPUSH_TAG") or jpush.get("tag", "") or "hotspot",
+        # 留空 = 广播；按标签推送是极光 VIP 功能
+        "JPUSH_TAG": _get_env_str("JPUSH_TAG") or jpush.get("tag", ""),
         "JPUSH_APNS_PRODUCTION": _get_env_str("JPUSH_APNS_PRODUCTION") or str(jpush.get("apns_production", "false")),
     }
 
@@ -525,7 +526,8 @@ def _print_notification_sources(config: Dict) -> None:
     if config.get("JPUSH_APP_KEY") and config.get("JPUSH_MASTER_SECRET"):
         source = "环境变量" if os.environ.get("JPUSH_MASTER_SECRET") else "配置文件"
         environment = "生产" if str(config.get("JPUSH_APNS_PRODUCTION", "")).strip().lower() in ("true", "1", "yes", "on") else "开发"
-        notification_sources.append(f"极光推送({source}, 标签 {config.get('JPUSH_TAG')}, {environment}环境)")
+        target = f"标签 {config.get('JPUSH_TAG')}" if config.get("JPUSH_TAG") else "广播"
+        notification_sources.append(f"极光推送({source}, {target}, {environment}环境)")
 
     if notification_sources:
         print(f"通知渠道配置来源: {', '.join(notification_sources)}")

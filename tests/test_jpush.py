@@ -1,4 +1,4 @@
-"""JPush payload: one push per report to the tag, within JPush's iOS size limit."""
+"""JPush payload: one push per report, broadcast (or to a tag), within JPush's iOS size limit."""
 
 import json
 import unittest
@@ -36,19 +36,22 @@ def _hotspot(payload):
     return payload["notification"]["ios"]["extras"]["hotspot"]
 
 
-def _build(report, report_type="当前榜单", production=False, **kwargs):
-    return build_jpush_payload(report, report_type, "hotspot", production, **kwargs)
+def _build(report, report_type="当前榜单", production=False, tag=None, **kwargs):
+    return build_jpush_payload(report, report_type, tag, production, **kwargs)
 
 
 class JPushPayloadTests(unittest.TestCase):
     def test_nothing_to_push(self):
         self.assertIsNone(_build({"stats": []}))
 
-    def test_to_the_tag_on_ios_in_the_chosen_environment(self):
+    def test_broadcast_on_ios_in_the_chosen_environment(self):
         payload = _build(_report(1), production=False)
         self.assertEqual(payload["platform"], ["ios"])
-        self.assertEqual(payload["audience"], {"tag": ["hotspot"]})
+        # 按标签推送是 VIP 功能（免费账号 2009），默认广播
+        self.assertEqual(payload["audience"], "all")
         self.assertIs(payload["options"]["apns_production"], False)
+        self.assertEqual(_build(_report(1), tag="hotspot")["audience"], {"tag": ["hotspot"]})
+        self.assertEqual(_build(_report(1), tag="")["audience"], "all")
         self.assertIs(_build(_report(1), production=True)["options"]["apns_production"], True)
 
     def test_alert_and_items(self):
@@ -100,7 +103,8 @@ class JPushPayloadTests(unittest.TestCase):
         payload = _build(_report(2))
         text = describe_jpush_payload(payload)
         self.assertIn("标题：热点 · 当前榜单", text)
-        self.assertIn("标签：hotspot", text)
+        self.assertIn("发给：广播（所有设备）", text)
+        self.assertIn("发给：标签 hotspot", describe_jpush_payload(_build(_report(2), tag="hotspot")))
         self.assertIn("环境：开发", text)
         self.assertIn("附带条目：2/2", text)
         self.assertIn("1. [科技] 热点0字字字字字字字字字字（微博） 🆕", text)
@@ -148,20 +152,28 @@ class JPushSendTests(unittest.TestCase):
     def test_sends_with_basic_auth(self):
         with mock.patch("trendradar.notification.senders.requests.post",
                         return_value=self._response(200, {"sendno": "0", "msg_id": "123"})) as post:
-            self.assertTrue(send_to_jpush("key", "secret", "hotspot", False, _report(1), "当前榜单"))
+            self.assertTrue(send_to_jpush("key", "secret", None, False, _report(1), "当前榜单"))
         args, kwargs = post.call_args
         self.assertEqual(args[0], "https://api.jpush.cn/v3/push")
         self.assertEqual(kwargs["auth"], ("key", "secret"))
-        self.assertEqual(kwargs["json"]["audience"], {"tag": ["hotspot"]})
+        self.assertEqual(kwargs["json"]["audience"], "all")
 
     def test_a_refusal_is_a_failure(self):
         body = {"error": {"code": 1011, "message": "cannot find user by this audience"}}
         with mock.patch("trendradar.notification.senders.requests.post", return_value=self._response(400, body)):
+            self.assertFalse(send_to_jpush("key", "secret", None, False, _report(1), "当前榜单"))
+
+    def test_a_tag_push_refused_as_vip_says_so(self):
+        body = {"error": {"code": 2009, "message": "The request is restricted"}}
+        with mock.patch("trendradar.notification.senders.requests.post", return_value=self._response(403, body)), \
+                mock.patch("builtins.print") as printed:
             self.assertFalse(send_to_jpush("key", "secret", "hotspot", False, _report(1), "当前榜单"))
+        logged = " ".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+        self.assertIn("JPUSH_TAG 留空改用广播", logged)
 
     def test_nothing_to_push_sends_nothing(self):
         with mock.patch("trendradar.notification.senders.requests.post") as post:
-            self.assertTrue(send_to_jpush("key", "secret", "hotspot", False, {"stats": []}, "当前榜单"))
+            self.assertTrue(send_to_jpush("key", "secret", None, False, {"stats": []}, "当前榜单"))
         post.assert_not_called()
 
 
