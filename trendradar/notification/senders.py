@@ -33,6 +33,8 @@ from urllib.parse import quote_plus, urlparse
 
 import requests
 
+from trendradar.utils.time import DEFAULT_TIMEZONE, get_configured_time
+
 from .batch import add_batch_headers, get_max_batch_header_size
 from .formatters import convert_markdown_to_mrkdwn, strip_markdown
 
@@ -1489,6 +1491,7 @@ def build_jpush_payload(
     mode: str = "daily",
     limit: int = JPUSH_IOS_LIMIT,
     standalone_data: Optional[Dict] = None,
+    timezone: str = DEFAULT_TIMEZONE,
 ) -> Optional[Dict]:
     """
     组装发给极光的请求体，没有热点时返回 None。
@@ -1516,13 +1519,17 @@ def build_jpush_payload(
     # 头部统计：和网页报告的紫色表头同样的四项中的三项。新闻总数指这次抓取
     # 到的全部条目（含没匹配到关键词的），与 hotlist_total 一致；没有这个
     # 数据时退回条目数。
+    #
+    # 时间用配置时区的当前时间，不是 `datetime.now()`：GitHub Actions 的
+    # 容器是 UTC，直接取会和手机上看到的差八小时。项目里其它地方都用
+    # `get_configured_time`，这里也照做。
     news_total = report_data.get("hotlist_total") or len(items)
     header = {
         "report": report_type,
         "mode": mode,
         "total": len(items),
         "news": news_total,
-        "generated": datetime.now().strftime("%m-%d %H:%M"),
+        "generated": get_configured_time(timezone).strftime("%m-%d %H:%M"),
         "items": [],
     }
     ios = {
@@ -1596,6 +1603,7 @@ def send_to_jpush(
     proxy_url: Optional[str] = None,
     mode: str = "daily",
     standalone_data: Optional[Dict] = None,
+    timezone: str = DEFAULT_TIMEZONE,
 ) -> bool:
     """
     发送到极光推送：广播（tag 留空）或推给打了 tag 的设备，极光交给 APNs，送到 iOS App。
@@ -1610,11 +1618,15 @@ def send_to_jpush(
         proxy_url: 代理 URL（可选）
         mode: 报告模式
         standalone_data: 独立展示区数据（可选，各平台榜单前几条）
+        timezone: 报告时间的时区，默认 Asia/Shanghai
 
     Returns:
         bool: 发送是否成功（没有热点可推时也返回 True）
     """
-    payload = build_jpush_payload(report_data, report_type, tag, production, mode, standalone_data=standalone_data)
+    payload = build_jpush_payload(
+        report_data, report_type, tag, production, mode,
+        standalone_data=standalone_data, timezone=timezone,
+    )
     if payload is None:
         print(f"极光推送 没有可推送的热点，跳过 [{report_type}]")
         return True

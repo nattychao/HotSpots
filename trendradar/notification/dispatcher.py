@@ -369,6 +369,9 @@ class NotificationDispatcher:
                 proxy_url=proxy_url,
                 mode=mode,
                 standalone_data=sd,
+                # 报告时间按配置的时区算。GitHub Actions 的容器是 UTC，
+                # 用它自己的 now() 会让手机上看到的时间差八小时。
+                timezone=self.config.get("TIMEZONE", "Asia/Shanghai"),
             )
 
         # 邮件（保持原有逻辑，已支持多收件人，AI 分析已嵌入 HTML）
