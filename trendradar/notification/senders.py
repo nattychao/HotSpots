@@ -1376,17 +1376,52 @@ JPUSH_IOS_LIMIT = 3584
 JPUSH_BODY_ITEMS = 3
 
 
+def _rank_text(ranks) -> str:
+    """排名的可读形式："7" 或 "7-8"。没有排名时给空串。"""
+    if not ranks:
+        return ""
+    unique = sorted({int(r) for r in ranks if isinstance(r, (int, float))})
+    if not unique:
+        return ""
+    low, high = unique[0], unique[-1]
+    return str(low) if low == high else f"{low}-{high}"
+
+
+def _hotspot_level(ranks, rank_threshold) -> str:
+    """排名的强调级别：前 3 算 top，进入阈值算 hot，其余 normal。
+
+    网页报告用红色/橙色徽标区分前几名；推送沿用同一套语义，让两处看起来
+    是同一个产品，而不是两套风格。
+    """
+    if not ranks:
+        return "normal"
+    numeric = [int(r) for r in ranks if isinstance(r, (int, float))]
+    if not numeric:
+        return "normal"
+    low = min(numeric)
+    if low <= 3:
+        return "top"
+    if low <= rank_threshold:
+        return "hot"
+    return "normal"
+
+
 def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = None) -> list:
     """
-    按报告顺序取出热点条目（去重），每条：标题、来源、链接、分组、是否新增。
+    按报告顺序取出热点条目（去重），每条：标题、来源、链接、分组、是否新增，
+    以及网页报告里同样会显示的排名、时间跨度、出现次数。
 
     先是关键词匹配到的（分组为关键词组），再是独立展示区各平台的榜单
     （分组为平台名，例如“今日头条”）。
+
+    字段用短名，因为载荷只有 3.5KB，长名会把条目挤掉：
+      t 标题 / s 来源 / u 链接 / k 分组 / n 新增
+      r 排名 "7-8" / lv 级别 top|hot|normal / tm 时间跨度 / c 出现次数
     """
     items = []
     seen = set()
 
-    def add(title, source, url, group, is_new):
+    def add(title, source, url, group, is_new, ranks=None, rank_threshold=10, time_display="", count=0):
         title = (title or "").strip()
         if not title:
             return
@@ -1394,7 +1429,16 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
         if key in seen:
             return
         seen.add(key)
-        items.append({"t": title, "s": source, "u": url, "k": group, "n": bool(is_new)})
+        item = {"t": title, "s": source, "u": url, "k": group, "n": bool(is_new)}
+        rank = _rank_text(ranks)
+        if rank:
+            item["r"] = rank
+            item["lv"] = _hotspot_level(ranks, rank_threshold)
+        if time_display:
+            item["tm"] = time_display
+        if count:
+            item["c"] = int(count)
+        items.append(item)
 
     for stat in report_data.get("stats", []) or []:
         word = stat.get("word", "")
@@ -1410,6 +1454,10 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
                 or "",
                 word,
                 title_data.get("is_new", False),
+                ranks=title_data.get("ranks") or [],
+                rank_threshold=title_data.get("rank_threshold", 10),
+                time_display=title_data.get("time_display", ""),
+                count=title_data.get("count", 0),
             )
 
     for platform in (standalone_data or {}).get("platforms", []) or []:
@@ -1421,6 +1469,10 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
                 item.get("mobileUrl") or item.get("url") or "",
                 name,
                 False,
+                ranks=item.get("ranks") or ([item["rank"]] if item.get("rank") else []),
+                rank_threshold=item.get("rank_threshold", 10),
+                time_display=item.get("time_display", ""),
+                count=item.get("count", 0),
             )
     return items
 
@@ -1461,14 +1513,26 @@ def build_jpush_payload(
     if len(items) > JPUSH_BODY_ITEMS:
         lines.append(f"等 {len(items)} 条")
 
+    # 头部统计：和网页报告的紫色表头同样的四项中的三项。新闻总数指这次抓取
+    # 到的全部条目（含没匹配到关键词的），与 hotlist_total 一致；没有这个
+    # 数据时退回条目数。
+    news_total = report_data.get("hotlist_total") or len(items)
+    header = {
+        "report": report_type,
+        "mode": mode,
+        "total": len(items),
+        "news": news_total,
+        "generated": datetime.now().strftime("%m-%d %H:%M"),
+        "items": [],
+    }
     ios = {
         "alert": {"title": f"热点 · {report_type}", "body": "\n".join(lines)},
         "sound": "default",
         "thread-id": "trendradar",
-        "extras": {"hotspot": {"report": report_type, "mode": mode, "total": len(items), "items": []}},
+        "extras": {"hotspot": header},
     }
 
-    carried = ios["extras"]["hotspot"]["items"]
+    carried = header["items"]
     for item in items:
         carried.append(item)
         if _ios_size(ios) > limit:
