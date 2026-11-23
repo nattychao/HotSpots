@@ -276,6 +276,8 @@ notification:
 
     dingtalk:
       webhook_url: ""                 # 钉钉机器人 webhook URL
+      secret: ""                      # 加签密钥（机器人安全设置里勾了"加签"才有）
+                                      # 建议用环境变量 DINGTALK_SECRET，不要写在这里
 
     wework:
       webhook_url: ""                 # 企业微信机器人 webhook URL

@@ -414,6 +414,8 @@ def _load_webhook_config(config_data: Dict) -> Dict:
         "FEISHU_WEBHOOK_URL": _get_env_str("FEISHU_WEBHOOK_URL") or feishu.get("webhook_url", ""),
         # 钉钉
         "DINGTALK_WEBHOOK_URL": _get_env_str("DINGTALK_WEBHOOK_URL") or dingtalk.get("webhook_url", ""),
+        # 加签：机器人安全设置勾了"加签"时填，否则留空
+        "DINGTALK_SECRET": _get_env_str("DINGTALK_SECRET") or dingtalk.get("secret", ""),
         # 企业微信
         "WEWORK_WEBHOOK_URL": _get_env_str("WEWORK_WEBHOOK_URL") or wework.get("webhook_url", ""),
         "WEWORK_MSG_TYPE": _get_env_str("WEWORK_MSG_TYPE") or wework.get("msg_type", "markdown"),

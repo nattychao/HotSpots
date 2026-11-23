@@ -16,6 +16,9 @@
 每个发送函数都支持分批发送，并通过参数化配置实现与 CONFIG 的解耦。
 """
 
+import base64
+import hashlib
+import hmac
 import smtplib
 import time
 import json
@@ -26,7 +29,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import requests
 
@@ -228,6 +231,33 @@ def send_to_feishu(
     return True
 
 
+def sign_dingtalk_url(webhook_url: str, secret: str) -> str:
+    """给钉钉机器人 webhook 加上 timestamp 和 sign（加签模式）。
+
+    钉钉的加签算法：把 `${timestamp}\\n${secret}` 用 secret 做 HmacSHA256，
+    再 base64、再 URL 编码。timestamp 是毫秒，且必须在一小时内，所以**每次
+    发送都要重新算**，不能预先算好存起来。
+
+    机器人安全设置里勾了"加签"就必须带这两个参数，否则钉钉返回
+    `errcode 310000, sign not match`。没开加签的机器人带上也无害——参数多于
+    要求时钉钉只校验要求的那部分，不过为了避免困惑，只在配置了 secret 时才加。
+    """
+    if not secret:
+        return webhook_url
+
+    timestamp = str(round(time.time() * 1000))
+    string_to_sign = f"{timestamp}\n{secret}"
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        string_to_sign.encode("utf-8"),
+        digestmod=hashlib.sha256,
+    ).digest()
+    sign = quote_plus(base64.b64encode(digest))
+
+    separator = "&" if "?" in webhook_url else "?"
+    return f"{webhook_url}{separator}timestamp={timestamp}&sign={sign}"
+
+
 def send_to_dingtalk(
     webhook_url: str,
     report_data: Dict,
@@ -237,6 +267,7 @@ def send_to_dingtalk(
     mode: str = "daily",
     account_label: str = "",
     *,
+    secret: str = "",
     batch_size: int = 20000,
     batch_interval: float = 1.0,
     split_content_func: Callable = None,
@@ -315,8 +346,13 @@ def send_to_dingtalk(
         }
 
         try:
+            # 每批重新签名：timestamp 必须在一小时内，批次间可能间隔很久。
             response = requests.post(
-                webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
+                sign_dingtalk_url(webhook_url, secret),
+                headers=headers,
+                json=payload,
+                proxies=proxies,
+                timeout=30,
             )
             if response.status_code == 200:
                 result = response.json()
