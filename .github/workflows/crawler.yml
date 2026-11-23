@@ -50,6 +50,11 @@ on:
     - cron: "33 9 * * *"
 
   workflow_dispatch:
+    inputs:
+      force_push:
+        description: "忽略推送时段，这次强制推送（测试用；定时任务不受影响）"
+        type: boolean
+        default: false
 
 concurrency:
   group: crawler-${{ github.ref_name }}
@@ -116,6 +121,9 @@ jobs:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # 手动运行勾了 force_push：关掉调度（时段判断），这次照常抓取并推送；
+          # 其余情况留空，按 config.yaml 的 schedule 走
+          SCHEDULE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.force_push && 'false' || '' }}
           DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
           DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
           WEWORK_WEBHOOK_URL: ${{ secrets.WEWORK_WEBHOOK_URL }}
