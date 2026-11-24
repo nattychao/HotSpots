@@ -1512,7 +1512,14 @@ def build_jpush_payload(
     if not items:
         return None
 
-    lines = [f"• {item['t']}" for item in items[:JPUSH_BODY_ITEMS]]
+    # 带圈数字而不是圆点：横幅上每一行开头有个数字，扫一眼就知道这是
+    # 第几条，也让「等 N 条」读起来是接着数下去的。①②③ 是三行正文的
+    # 上限决定的，`JPUSH_BODY_ITEMS` 调大时要同步加这个表。
+    circled = "①②③④⑤⑥⑦⑧⑨⑩"
+    lines = [
+        f"{circled[i] if i < len(circled) else '•'} {item['t']}"
+        for i, item in enumerate(items[:JPUSH_BODY_ITEMS])
+    ]
     if len(items) > JPUSH_BODY_ITEMS:
         lines.append(f"等 {len(items)} 条")
 
