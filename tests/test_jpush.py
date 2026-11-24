@@ -73,6 +73,13 @@ class JPushPayloadTests(unittest.TestCase):
         self.assertEqual(first["k"], "科技")
         self.assertEqual(first["s"], "微博")
 
+    def test_mutable_content_lets_the_client_rewrite_the_sound(self):
+        """客户端靠它改写提示音，缺了系统不会调用扩展，也不会报错。"""
+        ios = _build(_report(1))["notification"]["ios"]
+        self.assertIs(ios["mutable-content"], True)
+        # 兜底音：扩展没改写时播这个。
+        self.assertEqual(ios["sound"], "default")
+
     def test_duplicates_across_keyword_groups_once(self):
         report = _report(2)
         report["stats"].append(dict(report["stats"][0], word="其他"))

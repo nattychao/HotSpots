@@ -1534,7 +1534,13 @@ def build_jpush_payload(
     }
     ios = {
         "alert": {"title": f"热点 · {report_type}", "body": "\n".join(lines)},
+        # 兜底的提示音：收到时若客户端没有改写（未开启、扩展超时，或版本过
+        # 旧），系统就播这个。
         "sound": "default",
+        # 让客户端可以拦截并改写这条通知。Oasis 的通知服务扩展用它把提示音
+        # 换成用户选的那一个；后续的头像、附件也依赖这个字段。缺了它系统不
+        # 会调用扩展，用户设置的提示音对远程推送不生效，且不会有任何报错。
+        "mutable-content": True,
         "thread-id": "trendradar",
         "extras": {"hotspot": header},
     }
