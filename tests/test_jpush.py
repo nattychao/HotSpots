@@ -60,7 +60,10 @@ class JPushPayloadTests(unittest.TestCase):
         self.assertEqual(ios["thread-id"], "trendradar")
         alert = ios["alert"]
         self.assertEqual(alert["title"], "热点 · 当前榜单")
-        self.assertEqual(alert["body"].count("•"), 3)
+        # 行首是带圈数字，不是圆点：三行正文各一个 ①②③。
+        for mark in "①②③":
+            self.assertEqual(alert["body"].count(mark), 1, mark)
+        self.assertNotIn("•", alert["body"])
         self.assertIn("等 5 条", alert["body"])
 
         hotspot = _hotspot(payload)
@@ -86,16 +89,29 @@ class JPushPayloadTests(unittest.TestCase):
         payload = _build(report)
         self.assertEqual(_hotspot(payload)["total"], 2)
 
-    def test_platform_lists_follow_the_keyword_matches(self):
+    def test_platform_lists_come_before_the_keyword_matches(self):
+        """独立展示区（抖音、头条）排在关键词结果之前。
+
+        它们按小时在变，放在最前面，推送的头几条就是"现在最热"的内容；
+        放在最后会被 3.5KB 的截断线挤掉，一条都留不下。
+        """
         standalone = {"platforms": [{"id": "toutiao", "name": "今日头条", "items": [
             {"title": "头条一", "url": "https://toutiao.com/1", "mobileUrl": "https://m.toutiao.com/1"},
             {"title": "热点0字字字字字字字字字字", "url": "https://example.com/0", "mobileUrl": ""},
         ]}]}
         payload = _build(_report(1), standalone_data=standalone)
         items = _hotspot(payload)["items"]
-        self.assertEqual([item["k"] for item in items], ["科技", "今日头条"])
-        self.assertEqual(items[1]["u"], "https://m.toutiao.com/1")
-        self.assertEqual(items[1]["s"], "今日头条")
+        # 头条排在最前——这是这次的改动。
+        self.assertEqual(items[0]["k"], "今日头条")
+        self.assertEqual(items[0]["u"], "https://m.toutiao.com/1")
+        self.assertEqual(items[0]["s"], "今日头条")
+        # 头条第二条与关键词那条标题、地址都相同，按 (标题, 地址) 去重后
+        # 只保留先到的头条那条，不会出现两条一样的。
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[1]["k"], "今日头条")
+        self.assertEqual(
+            [i["t"] for i in items].count("热点0字字字字字字字字字字"), 1
+        )
 
     def test_stays_within_jpushs_ios_limit(self):
         payload = _build(_report(200, title_length=30), "全天汇总")

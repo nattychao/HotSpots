@@ -1442,6 +1442,24 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
             item["c"] = int(count)
         items.append(item)
 
+    # 独立展示区先收集：抖音、今日头条这类榜单自己每小时都在变，把它们放在
+    # 最前面，推送的头几条就是"现在最热"的内容。放在最后的话，它们会被
+    # 关键词结果挤到 3.5KB 的截断线之外，一条都留不下。
+    for platform in (standalone_data or {}).get("platforms", []) or []:
+        name = platform.get("name") or platform.get("id", "")
+        for item in platform.get("items", []) or []:
+            add(
+                item.get("title"),
+                name,
+                item.get("mobileUrl") or item.get("url") or "",
+                name,
+                False,
+                ranks=item.get("ranks") or ([item["rank"]] if item.get("rank") else []),
+                rank_threshold=item.get("rank_threshold", 10),
+                time_display=item.get("time_display", ""),
+                count=item.get("count", 0),
+            )
+
     for stat in report_data.get("stats", []) or []:
         word = stat.get("word", "")
         for title_data in stat.get("titles", []) or []:
@@ -1460,21 +1478,6 @@ def _collect_hotspot_items(report_data: Dict, standalone_data: Optional[Dict] = 
                 rank_threshold=title_data.get("rank_threshold", 10),
                 time_display=title_data.get("time_display", ""),
                 count=title_data.get("count", 0),
-            )
-
-    for platform in (standalone_data or {}).get("platforms", []) or []:
-        name = platform.get("name") or platform.get("id", "")
-        for item in platform.get("items", []) or []:
-            add(
-                item.get("title"),
-                name,
-                item.get("mobileUrl") or item.get("url") or "",
-                name,
-                False,
-                ranks=item.get("ranks") or ([item["rank"]] if item.get("rank") else []),
-                rank_threshold=item.get("rank_threshold", 10),
-                time_display=item.get("time_display", ""),
-                count=item.get("count", 0),
             )
     return items
 

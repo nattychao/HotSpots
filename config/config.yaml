@@ -251,9 +251,12 @@ display:
   # 独立展示区：将指定平台/RSS 完整展示，不受关键词过滤
   # 推送展示由 regions.standalone 控制，AI 分析由 ai_analysis.include_standalone 控制
   standalone:
-    platforms: ["toutiao", "douyin"]             # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
+    # 抖音放第一位：它每小时都在变，推送的头几条就是"现在最热"，重复感最小。
+    # 这两个源现在排在关键词结果之前（见 senders.py 的 _collect_hotspot_items）。
+    platforms: ["douyin", "toutiao"]             # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
     rss_feeds: []                                # RSS 源 ID 列表（如 ["hacker-news"]）
-    max_items: 5                                 # 每个源最多展示条数（0=不限制）
+    max_items: 6                                 # 每个源最多展示条数（0=不限制）
+                                                 # 6 × 2 个源 = 12 条，占掉推送前段
 
 
 # ===============================================================
